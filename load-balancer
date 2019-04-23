@@ -3,7 +3,7 @@ kind: Service
 metadata:
   name: sample-load-balancer
   label:
-    tier: frontend
+    app: webserver
 spec:
   type: LoadBalancer
   ports:
