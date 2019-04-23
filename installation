@@ -1,0 +1,118 @@
+# Pre-requisites:
+------------------
+-	Disable SELinux
+-	Enable netfilter Kernel Module
+-	Disable SWAP (comment the line in /etc/fstab)
+
+---------------------
+#Install Docker CE
+---------------------
+
+Install the latest version of Docker-ce from the docker repository.
+Install the package dependencies for docker-ce.
+
+$yum install -y yum-utils device-mapper-persistent-data lvm2
+
+Add the docker repository to the system and install docker-ce using the yum command.
+
+$yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+$yum install -y docker-ce
+
+-----------------------
+Install Kubernetes
+-----------------------
+
+Add the kubernetes repository to the centos 7 system by running the following command.
+
+$cat <<EOF > /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg
+        https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+EOF
+
+Now install the kubernetes packages kubeadm, kubelet, and kubectl using the yum command below.
+
+$yum install -y kubelet kubeadm kubectl
+
+After the installation is complete, restart all those servers.
+
+Log in again to the server and start the services, docker and kubelet.
+
+$systemctl start docker && systemctl enable docker
+$systemctl start kubelet && systemctl enable kubelet
+
+Change the cgroup-driver
+----------------------------
+We need to make sure the docker-ce and kubernetes are using same 'cgroup'.
+
+Check docker cgroup using the docker info command.
+
+$docker info | grep -i cgroup
+  
+And you see the docker is using 'cgroupfs' as a cgroup-driver.
+Now run the command below to change the kuberetes cgroup-driver to 'cgroupfs'
+
+$sed -i 's/cgroup-driver=systemd/cgroup-driver=cgroupfs/g' /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+Reload the systemd system and restart the kubelet service.
+
+$systemctl daemon-reload
+$systemctl restart kubelet
+
+Now we're ready to configure the Kubernetes Cluster.
+
+-------------------------------------
+Kubernetes Cluster Initialization
+-------------------------------------
+In this step, we will initialize the kubernetes master cluster configuration.
+Move the shell to the master server 'k8s-master' and run the command below to set up the kubernetes master.
+
+$kubeadm init --apiserver-advertise-address=10.0.15.10 --pod-network-cidr=10.244.0.0/16
+
+####Note:
+--apiserver-advertise-address = determines which IP address Kubernetes should advertise its API server on.
+--pod-network-cidr = specify the range of IP addresses for the pod network. We're using the 'flannel' virtual network. 
+  If you want to use another pod network such as weave-net or calico, change the range IP addr
+
+####Note:
+Copy the 'kubeadm join ... ... ...' command to your text editor. The command will be used to register new nodes to the kubernetes 
+cluster.
+
+Now in order to use Kubernetes, we need to run some commands as on the result.
+
+Create new '.kube' configuration directory and copy the configuration 'admin.conf'.
+
+$mkdir -p $HOME/.kube
+$sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+$sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+Next, deploy the flannel network to the kubernetes cluster using the kubectl command.
+
+$kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+
+The flannel network has been deployed to the Kubernetes cluster.
+
+Wait for a minute and then check kubernetes node and pods using commands below.
+
+$kubectl get nodes
+$kubectl get pods --all-namespaces
+And you will get the 'k8s-master' node is running as a 'master' cluster with status 'ready', and you will get all pods that are needed for the cluster, including the 'kube-flannel-ds' for network pod configuration.
+
+Make sure all kube-system pods status is 'running'.
+
+-----------------------------------------
+ Adding node01 and node02 to the Cluster
+-----------------------------------------
+In this step, we will add node01 and node02 to join the 'k8s' cluster.
+
+Connect to the node01 server and run the kubeadm join command as we copied on the top.
+
+kubeadm join 10.0.15.10:6443 --token vzau5v.vjiqyxq26lzsf28e --discovery-token-ca-cert-hash sha256:e6d046ba34ee03e7d55e1f5ac6d2de09fd6d7e6959d16782ef0778794b94c61e
+Wait for some minutes and back to the 'k8s-master' master cluster server check the nodes and pods using the following command.
+
+$kubectl get nodes
+$kubectl get pods --all-namespaces
